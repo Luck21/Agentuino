@@ -2,17 +2,14 @@
   Agentuino.cpp - An Arduino library for a lightweight SNMP Agent.
   Copyright (C) 2010 Eric C. Gionet <lavco_eg@hotmail.com>
   All rights reserved.
-
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
   License as published by the Free Software Foundation; either
   version 2.1 of the License, or (at your option) any later version.
-
   This library is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
   Lesser General Public License for more details.
-
   You should have received a copy of the GNU Lesser General Public
   License along with this library; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
@@ -23,7 +20,8 @@
 //
 
 #include "Agentuino.h"
-#include "EthernetUdp.h"
+
+#include <EthernetUdp.h>
 
 EthernetUDP Udp;
 SNMP_API_STAT_CODES AgentuinoClass::begin()
@@ -31,10 +29,12 @@ SNMP_API_STAT_CODES AgentuinoClass::begin()
 	// set community names
 	_getCommName = "public";
 	_setCommName = "private";
+	_trapCommName = "public";
 	//
 	// set community name set/get sizes
 	_setSize = strlen(_setCommName);
 	_getSize = strlen(_getCommName);
+	_trapSize = strlen(_trapCommName);
 	//
 	// init UDP socket
 	Udp.begin(SNMP_DEFAULT_PORT);
@@ -42,11 +42,13 @@ SNMP_API_STAT_CODES AgentuinoClass::begin()
 	return SNMP_API_STAT_SUCCESS;
 }
 
-SNMP_API_STAT_CODES AgentuinoClass::begin(char *getCommName, char *setCommName, uint16_t port)
+SNMP_API_STAT_CODES AgentuinoClass::begin(char *getCommName,
+        char *setCommName, char *trapCommName, uint16_t port)
 {
 	// set community name set/get sizes
 	_setSize = strlen(setCommName);
 	_getSize = strlen(getCommName);
+	_trapSize = strlen(trapCommName);
 	//
 	// validate get/set community name sizes
 	if ( _setSize > SNMP_MAX_NAME_LEN + 1 || _getSize > SNMP_MAX_NAME_LEN + 1 ) {
@@ -269,22 +271,68 @@ SNMP_API_STAT_CODES AgentuinoClass::requestPdu(SNMP_PDU *pdu)
 	return SNMP_API_STAT_SUCCESS;
 }
 
-SNMP_API_STAT_CODES AgentuinoClass::responsePdu(SNMP_PDU *pdu)
+SNMP_API_STAT_CODES AgentuinoClass::sendTrap(
+        SNMP_PDU *pdu, const uint8_t* manager)
+{
+	byte i;
+    SNMP_VALUE value;
+    _dstType = pdu->type = SNMP_PDU_TRAP;
+	_packetPos = 0;
+    uint16_t size = pdu->OID.size + 27
+        + 2 + pdu->trap_data_size;
+    writeHeaders(pdu, size);
+    _packet[_packetPos++] = (byte) size - 1;
+    _packet[_packetPos++] = (byte) SNMP_SYNTAX_OID;
+	_packet[_packetPos++] = (byte) (pdu->OID.size);
+	for(i = 0; i < pdu->OID.size; i++)
+		_packet[_packetPos++] = pdu->OID.data[i];
+    _packet[_packetPos++] = (byte) SNMP_SYNTAX_IP_ADDRESS;
+    _packet[_packetPos++] = (byte) 4;
+    for(i = 0; i < 4; i++) _packet[_packetPos++] = pdu->address[i];
+	_packet[_packetPos++] = (byte) SNMP_SYNTAX_INT;
+    value.encode(SNMP_SYNTAX_INT, pdu->trap_type);
+	_packet[_packetPos++] = (byte) sizeof(pdu->trap_type);
+	_packet[_packetPos++] = value.data[0];
+	_packet[_packetPos++] = value.data[1];
+	_packet[_packetPos++] = (byte) SNMP_SYNTAX_INT;
+    value.encode(SNMP_SYNTAX_INT, pdu->specific_trap);
+	_packet[_packetPos++] = (byte) sizeof(pdu->specific_trap);
+	_packet[_packetPos++] = value.data[0];
+	_packet[_packetPos++] = value.data[1];
+	_packet[_packetPos++] = (byte) SNMP_SYNTAX_TIME_TICKS;
+	_packet[_packetPos++] = (byte) sizeof(pdu->time_ticks);
+    value.encode(SNMP_SYNTAX_TIME_TICKS, pdu->time_ticks);
+	_packet[_packetPos++] = value.data[0];
+	_packet[_packetPos++] = value.data[1];
+	_packet[_packetPos++] = value.data[2];
+	_packet[_packetPos++] = value.data[3];
+    _packet[_packetPos++] = (byte) SNMP_SYNTAX_SEQUENCE;
+    _packet[_packetPos++] = (byte) 4 + pdu->trap_data_size;
+    _packet[_packetPos++] = (byte) SNMP_SYNTAX_SEQUENCE;
+    _packet[_packetPos++] = (byte) 2 + pdu->trap_data_size;
+    pdu->trap_data_adder(_packet + _packetPos);
+    return writePacket(manager, 162);
+}
+void AgentuinoClass::writeHeaders(SNMP_PDU *pdu, uint16_t size)
 {
 	int32_u u;
 	byte i;
 	//
 	// Length of entire SNMP packet
 	_packetPos = 0;  // 23
-	_packetSize = 25 + sizeof(pdu->requestId) + sizeof(pdu->error) + sizeof(pdu->errorIndex) + pdu->OID.size + pdu->VALUE.size;
+	_packetSize = 8 + size;
 	//
 	memset(_packet, 0, SNMP_MAX_PACKET_LEN);
 	//
 	if ( _dstType == SNMP_PDU_SET ) {
 		_packetSize += _setSize;
 	} else {
-		_packetSize += _getSize;
-	}
+        if ( _dstType == SNMP_PDU_TRAP ) {
+            _packetSize += _trapSize;
+        } else {
+            _packetSize += _getSize;
+        }
+    }
 	//
 	_packet[_packetPos++] = (byte)SNMP_SYNTAX_SEQUENCE;	// type
 	_packet[_packetPos++] = (byte)_packetSize - 2;		// length
@@ -302,14 +350,30 @@ SNMP_API_STAT_CODES AgentuinoClass::responsePdu(SNMP_PDU *pdu)
 			_packet[_packetPos++] = (byte)_setCommName[i];
 		}
 	} else {
-		_packet[_packetPos++] = (byte)_getSize;	// length
-		for ( i = 0; i < _getSize; i++ ) {
-			_packet[_packetPos++] = (byte)_getCommName[i];
-		}
+        if ( _dstType == SNMP_PDU_TRAP ) {
+            _packet[_packetPos++] = (byte)_trapSize;	// length
+            for ( i = 0; i < _getSize; i++ ) {
+                _packet[_packetPos++] = (byte)_trapCommName[i];
+            }
+        } else {
+            _packet[_packetPos++] = (byte)_getSize;	// length
+            for ( i = 0; i < _getSize; i++ ) {
+                _packet[_packetPos++] = (byte)_getCommName[i];
+            }
+        }
 	}
 	//
 	// SNMP PDU
 	_packet[_packetPos++] = (byte)pdu->type;
+}
+SNMP_API_STAT_CODES AgentuinoClass::responsePdu(SNMP_PDU *pdu)
+{
+	int32_u u;
+	byte i;
+    this->writeHeaders(pdu, 17 +
+            sizeof(pdu->requestId) + sizeof(pdu->error)
+            + sizeof(pdu->errorIndex) + pdu->OID.size
+            + pdu->VALUE.size);
 	_packet[_packetPos++] = (byte)( sizeof(pdu->requestId) + sizeof((int32_t)pdu->error) + sizeof(pdu->errorIndex) + pdu->OID.size + pdu->VALUE.size + 14 );
 	//
 	// Request ID (size always 4 e.g. 4-byte int)
@@ -360,12 +424,14 @@ SNMP_API_STAT_CODES AgentuinoClass::responsePdu(SNMP_PDU *pdu)
 	for ( i = 0; i < pdu->VALUE.size; i++ ) {
 		_packet[_packetPos++] = pdu->VALUE.data[i];
 	}
-	//
-	Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
+    return writePacket(Udp.remoteIP(), Udp.remotePort());
+}
+SNMP_API_STAT_CODES AgentuinoClass::writePacket(
+        IPAddress address, uint16_t port)
+{
+	Udp.beginPacket(address, port);
 	Udp.write(_packet, _packetSize);
 	Udp.endPacket();
-//	Udp.write(_packet, _packetSize, _dstIp, _dstPort);
-	//
 	return SNMP_API_STAT_SUCCESS;
 }
 

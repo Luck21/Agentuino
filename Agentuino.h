@@ -2,17 +2,14 @@
   Agentuino.cpp - An Arduino library for a lightweight SNMP Agent.
   Copyright (C) 2010 Eric C. Gionet <lavco_eg@hotmail.com>
   All rights reserved.
-
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
   License as published by the Free Software Foundation; either
   version 2.1 of the License, or (at your option) any later version.
-
   This library is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
   Lesser General Public License for more details.
-
   You should have received a copy of the GNU Lesser General Public
   License along with this library; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
@@ -566,6 +563,12 @@ typedef struct SNMP_PDU {
 	SNMP_ERR_CODES error;
 	int32_t errorIndex;
 	SNMP_OID OID;
+	char* address;
+    int16_t trap_type;
+    int16_t specific_trap;
+    int32_t time_ticks;
+    int16_t trap_data_size;
+    void (*trap_data_adder)(byte*) ;
 	SNMP_VALUE VALUE;
 };
 
@@ -573,19 +576,24 @@ class AgentuinoClass {
 public:
 	// Agent functions
 	SNMP_API_STAT_CODES begin();
-	SNMP_API_STAT_CODES begin(char *getCommName, char *setCommName, uint16_t port);
+	SNMP_API_STAT_CODES begin(char *getCommName,
+            char *setCommName, char *trapCommName, uint16_t port);
 	void listen(void);
 	SNMP_API_STAT_CODES requestPdu(SNMP_PDU *pdu);
 	SNMP_API_STAT_CODES responsePdu(SNMP_PDU *pdu);
+	SNMP_API_STAT_CODES sendTrap(SNMP_PDU *pdu, const uint8_t* manager);
 	void onPduReceive(onPduReceiveCallback pduReceived);
 	void freePdu(SNMP_PDU *pdu);
 
 	// Helper functions
 
 private:
+    void writeHeaders(SNMP_PDU *pdu, uint16_t size);
+    SNMP_API_STAT_CODES writePacket(IPAddress address, uint16_t port);
 	byte _packet[SNMP_MAX_PACKET_LEN];
 	uint16_t _packetSize;
 	uint16_t _packetPos;
+	uint16_t _packetTrapPos;
 	SNMP_PDU_TYPES _dstType;
 	uint8_t _dstIp[4];
 	uint16_t _dstPort;
@@ -593,6 +601,8 @@ private:
 	size_t _getSize;
 	char *_setCommName;
 	size_t _setSize;
+	char *_trapCommName;
+	size_t _trapSize;
 	onPduReceiveCallback _callback;
 };
 
