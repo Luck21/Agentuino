@@ -1,5 +1,5 @@
 /*
-  Agentuino.cpp - An Arduino library for a lightweight SNMP Agent.
+  Agentuino - An Arduino library for a lightweight SNMP Agent.
   Copyright (C) 2010 Eric C. Gionet <lavco_eg@hotmail.com>
   All rights reserved.
   This library is free software; you can redistribute it and/or
@@ -28,6 +28,8 @@
 #define SNMP_MAX_PACKET_LEN     SNMP_MAX_VALUE_LEN + SNMP_MAX_OID_LEN + 25  //???
 #define SNMP_FREE(s)   do { if (s) { free((void *)s); s=NULL; } } while(0)
 //Frees a pointer only if it is !NULL and sets its value to NULL. 
+
+#define MAX_TRAPS 3	// max number managed by the agent
 
 #include "Arduino.h"
 #include "Udp.h"
@@ -81,6 +83,29 @@ typedef enum ASN_BER_BASE_TYPES {
 	ASN_BER_BASE_CONSTRUCTOR = 0x20
 };
 
+//
+// http://oreilly.com/catalog/esnmp/chapter/ch02.html Table 2-1: SMIv1 Datatypes
+typedef enum SNMP_SYNTAXES {
+	//   SNMP ObjectSyntax values
+	SNMP_SYNTAX_SEQUENCE 	       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_CONSTRUCTOR | 0x10,
+	//   These values are used in the "syntax" member of VALUEs
+	SNMP_SYNTAX_BOOL 	       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_PRIMITIVE | 1,
+	SNMP_SYNTAX_INT 	       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_PRIMITIVE | 2,
+	SNMP_SYNTAX_BITS 	       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_PRIMITIVE | 3,
+	SNMP_SYNTAX_OCTETS 	       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_PRIMITIVE | 4,
+	SNMP_SYNTAX_NULL 	       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_PRIMITIVE | 5,
+	SNMP_SYNTAX_OID		       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_PRIMITIVE | 6,
+	SNMP_SYNTAX_INT32 	       = SNMP_SYNTAX_INT,
+	SNMP_SYNTAX_IP_ADDRESS         = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 0,
+	SNMP_SYNTAX_COUNTER 	       = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 1,
+	SNMP_SYNTAX_GAUGE 	       = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 2,
+	SNMP_SYNTAX_TIME_TICKS         = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 3,
+	SNMP_SYNTAX_OPAQUE 	       = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 4,
+	SNMP_SYNTAX_NSAPADDR 	       = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 5,
+	SNMP_SYNTAX_COUNTER64 	       = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 6,
+	SNMP_SYNTAX_UINT32 	       = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 7,
+};
+
 typedef enum SNMP_PDU_TYPES {
 	// PDU choices
 	SNMP_PDU_GET	  = ASN_BER_BASE_CONTEXT | ASN_BER_BASE_CONSTRUCTOR | 0,
@@ -88,6 +113,29 @@ typedef enum SNMP_PDU_TYPES {
 	SNMP_PDU_RESPONSE = ASN_BER_BASE_CONTEXT | ASN_BER_BASE_CONSTRUCTOR | 2,
 	SNMP_PDU_SET	  = ASN_BER_BASE_CONTEXT | ASN_BER_BASE_CONSTRUCTOR | 3,
 	SNMP_PDU_TRAP	  = ASN_BER_BASE_CONTEXT | ASN_BER_BASE_CONSTRUCTOR | 4
+};
+
+//Relational Operators
+enum relational_op {
+	LESS_THAN = 1,	 // a < b
+	GREATER_THAN,	 // a > b
+	LESS_OR_EQUAL, 	 // a <= b
+	GREATER_OR_EQUAL, // a >= b
+	NOT_EQUAL,
+	EQUAL
+	
+	//a is the pointed value by object_var field in TRAP_TRIGGER
+	//b is base_measure field of TRAP_TRIGGER
+};
+
+//Trap's trigger
+typedef struct TRAP_TRIGGER{
+	char oid[SNMP_MAX_OID_LEN];
+	SNMP_SYNTAXES type;
+	void *object_var;
+	enum relational_op condition;
+	void *base_measure;	//value to compare
+	bool send;
 };
 
 typedef enum SNMP_TRAP_TYPES {
@@ -135,29 +183,7 @@ typedef enum SNMP_API_STAT_CODES {
 	SNMP_API_STAT_NO_SUCH_NAME = 7,
 };
 
-//
-// http://oreilly.com/catalog/esnmp/chapter/ch02.html Table 2-1: SMIv1 Datatypes
 
-typedef enum SNMP_SYNTAXES {
-	//   SNMP ObjectSyntax values
-	SNMP_SYNTAX_SEQUENCE 	       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_CONSTRUCTOR | 0x10,
-	//   These values are used in the "syntax" member of VALUEs
-	SNMP_SYNTAX_BOOL 	       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_PRIMITIVE | 1,
-	SNMP_SYNTAX_INT 	       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_PRIMITIVE | 2,
-	SNMP_SYNTAX_BITS 	       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_PRIMITIVE | 3,
-	SNMP_SYNTAX_OCTETS 	       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_PRIMITIVE | 4,
-	SNMP_SYNTAX_NULL 	       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_PRIMITIVE | 5,
-	SNMP_SYNTAX_OID		       = ASN_BER_BASE_UNIVERSAL | ASN_BER_BASE_PRIMITIVE | 6,
-	SNMP_SYNTAX_INT32 	       = SNMP_SYNTAX_INT,
-	SNMP_SYNTAX_IP_ADDRESS         = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 0,
-	SNMP_SYNTAX_COUNTER 	       = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 1,
-	SNMP_SYNTAX_GAUGE 	       = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 2,
-	SNMP_SYNTAX_TIME_TICKS         = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 3,
-	SNMP_SYNTAX_OPAQUE 	       = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 4,
-	SNMP_SYNTAX_NSAPADDR 	       = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 5,
-	SNMP_SYNTAX_COUNTER64 	       = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 6,
-	SNMP_SYNTAX_UINT32 	       = ASN_BER_BASE_APPLICATION | ASN_BER_BASE_PRIMITIVE | 7,
-};
 
 typedef struct SNMP_OID {
 	byte data[SNMP_MAX_OID_LEN];  // ushort array insted??
@@ -566,7 +592,7 @@ typedef struct SNMP_PDU {
 	char* address;
     int16_t trap_type;
     int16_t specific_trap;
-    int32_t time_ticks;
+    uint32_t time_ticks;
     int16_t trap_data_size;
     void (*trap_data_adder)(byte*) ;
 	SNMP_VALUE VALUE;
@@ -581,6 +607,9 @@ public:
 	void listen(void);
 	SNMP_API_STAT_CODES requestPdu(SNMP_PDU *pdu);
 	SNMP_API_STAT_CODES responsePdu(SNMP_PDU *pdu);
+	uint8_t installTrap (const char *oid, void *obj, SNMP_SYNTAXES type,
+			     enum relational_op rel_op, void *base_measure);
+	uint8_t trapWatcher(void);
 	SNMP_API_STAT_CODES sendTrap(SNMP_PDU *pdu, const uint8_t* manager);
 	void onPduReceive(onPduReceiveCallback pduReceived);
 	void freePdu(SNMP_PDU *pdu);
@@ -588,6 +617,9 @@ public:
 	// Helper functions
 
 private:
+	uint32_t time_ticks = 0;
+	int8_t trapNum;
+	TRAP_TRIGGER trap_list[MAX_TRAPS];
     void writeHeaders(SNMP_PDU *pdu, uint16_t size);
     SNMP_API_STAT_CODES writePacket(IPAddress address, uint16_t port);
 	byte _packet[SNMP_MAX_PACKET_LEN];

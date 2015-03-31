@@ -20,7 +20,7 @@
 //
 
 #include "Agentuino.h"
-
+#include <avr/pgmspace.h>
 #include <EthernetUdp.h>
 
 EthernetUDP Udp;
@@ -39,6 +39,9 @@ SNMP_API_STAT_CODES AgentuinoClass::begin()
 	// init UDP socket
 	Udp.begin(SNMP_DEFAULT_PORT);
 	//
+
+	trapNum = -1;
+
 	return SNMP_API_STAT_SUCCESS;
 }
 
@@ -271,6 +274,169 @@ SNMP_API_STAT_CODES AgentuinoClass::requestPdu(SNMP_PDU *pdu)
 	return SNMP_API_STAT_SUCCESS;
 }
 
+/*
+ * installTrap
+ * notice a Trap condition to API.
+ * const char *oid - the OID 
+ *
+*/
+uint8_t AgentuinoClass::installTrap (const char *oid, void *obj, SNMP_SYNTAXES type, 
+ 				     enum relational_op rel_op, void *base_measure)
+{
+	if(trapNum >= MAX_TRAPS)
+	{
+		Serial.println(F("\n\rinstallTrap(): Trap not installed! trap_list is FULL\n\r"));
+		return 1; //error
+	}
+
+	trap_list[++trapNum].type = type;
+	strcpy_P(trap_list[trapNum].oid, oid);
+	trap_list[trapNum].object_var = obj;
+	trap_list[trapNum].condition  = rel_op;
+	trap_list[trapNum].base_measure = base_measure;
+	trap_list[trapNum].send = false;
+	
+	return 0;
+}
+/*
+ * This function check if some condition in "trap_list" has been achieved. 
+ * uint8_t trapWatcher (void)
+ *	params: void
+ *	return: 255 if trap_list is null, otherwise return Number of conditions traps achieved.
+*/
+uint8_t AgentuinoClass::trapWatcher(void)
+{
+	uint8_t achievedTraps = 0;
+	bool trigger = false;
+
+	if(trapNum < 0)
+		return 255;
+
+	for(uint8_t i = 0; i <= trapNum; i++)
+	{
+		switch(trap_list[i].condition)
+		{
+			case(LESS_THAN):
+				switch(trap_list[i].type)
+				{
+					case(SNMP_SYNTAX_UINT32):
+					case(SNMP_SYNTAX_INT):
+					case(SNMP_SYNTAX_COUNTER):
+					case(SNMP_SYNTAX_GAUGE):
+					case(SNMP_SYNTAX_TIME_TICKS):
+						trigger = *( (uint32_t *) trap_list[i].object_var) < *( (uint32_t *) trap_list[i].base_measure);
+					break;
+					case(SNMP_SYNTAX_COUNTER64):
+						trigger = *( (uint64_t *) trap_list[i].object_var) < *((uint64_t *) trap_list[i].base_measure);
+					break;
+				}
+			
+			break;
+			case(LESS_OR_EQUAL):
+				switch(trap_list[i].type)
+				{
+					case(SNMP_SYNTAX_UINT32):
+					case(SNMP_SYNTAX_INT):
+					case(SNMP_SYNTAX_COUNTER):
+					case(SNMP_SYNTAX_GAUGE):
+					case(SNMP_SYNTAX_TIME_TICKS):
+						trigger = *( (uint32_t *) trap_list[i].object_var) <= *( (uint32_t *) trap_list[i].base_measure);
+					break;
+					case(SNMP_SYNTAX_COUNTER64):
+						trigger = *( (uint64_t *) trap_list[i].object_var) <= *((uint64_t *) trap_list[i].base_measure);
+					break;
+				}
+			break;
+			case(GREATER_THAN):
+				switch(trap_list[i].type)
+				{
+					case(SNMP_SYNTAX_UINT32):
+					case(SNMP_SYNTAX_INT):
+					case(SNMP_SYNTAX_COUNTER):
+					case(SNMP_SYNTAX_GAUGE):
+					case(SNMP_SYNTAX_TIME_TICKS):
+						trigger = *( (uint32_t *) trap_list[i].object_var) > *( (uint32_t *) trap_list[i].base_measure);
+					break;
+					case(SNMP_SYNTAX_COUNTER64):
+						trigger = *( (uint64_t *) trap_list[i].object_var) > *((uint64_t *) trap_list[i].base_measure);
+					break;
+				}
+			break;
+			case(GREATER_OR_EQUAL):
+				switch(trap_list[i].type)
+				{
+					case(SNMP_SYNTAX_UINT32):
+					case(SNMP_SYNTAX_INT):
+					case(SNMP_SYNTAX_COUNTER):
+					case(SNMP_SYNTAX_GAUGE):
+					case(SNMP_SYNTAX_TIME_TICKS):
+						trigger = *( (uint32_t *) trap_list[i].object_var) >= *( (uint32_t *) trap_list[i].base_measure);
+					break;
+					case(SNMP_SYNTAX_COUNTER64):
+						trigger = *( (uint64_t *) trap_list[i].object_var) >= *((uint64_t *) trap_list[i].base_measure);
+					break;
+				}
+			break;
+			case(NOT_EQUAL):
+				switch(trap_list[i].type)
+				{
+					case(SNMP_SYNTAX_UINT32):
+					case(SNMP_SYNTAX_INT):
+					case(SNMP_SYNTAX_COUNTER):
+					case(SNMP_SYNTAX_GAUGE):
+					case(SNMP_SYNTAX_TIME_TICKS):
+						trigger = *( (uint32_t *) trap_list[i].object_var) != *( (uint32_t *) trap_list[i].base_measure);
+					break;
+					case(SNMP_SYNTAX_COUNTER64):
+						trigger = *( (uint64_t *) trap_list[i].object_var) != *((uint64_t *) trap_list[i].base_measure);
+					break;
+				}
+			break;
+			default:
+				switch(trap_list[i].type)
+				{
+					case(SNMP_SYNTAX_UINT32):
+					case(SNMP_SYNTAX_INT):
+					case(SNMP_SYNTAX_COUNTER):
+					case(SNMP_SYNTAX_GAUGE):
+					case(SNMP_SYNTAX_TIME_TICKS):
+						trigger = *( (uint32_t *) trap_list[i].object_var) == *( (uint32_t *) trap_list[i].base_measure);
+					break;
+					case(SNMP_SYNTAX_COUNTER64):
+						trigger = *( (uint64_t *) trap_list[i].object_var) == *((uint64_t *) trap_list[i].base_measure);
+					break;
+				}
+		}
+
+		if((trap_list[i].send = trigger));
+		{
+			
+			achievedTraps++;
+			Serial.print(F("trapWatcher(): Send trap -> "));
+			Serial.println(trap_list[i].oid);
+			
+			SNMP_PDU pdu;
+
+  			pdu.type = SNMP_PDU_TRAP;
+  			pdu.OID.fromString(trap_list[i].oid);
+  			pdu.address = agent;
+  			pdu.trap_type = trap_type;//SNMP_TRAP_WARM_START;
+  			pdu.specific_trap = 1;
+ 			pdu.time_ticks = this.time_ticks;
+
+			//future implementation
+			/* the size of the data you will add at the end of the packet */
+ 			//pdu.trap_data_size = 0;
+ 			/* the function that adds this data */
+ 			//pdu.trap_data_adder = add_trap_data;
+
+ 			Agentuino.sendTrap(&pdu, manager);
+		}
+	}
+
+	return achievedTraps;
+}
+
 SNMP_API_STAT_CODES AgentuinoClass::sendTrap(
         SNMP_PDU *pdu, const uint8_t* manager)
 {
@@ -313,6 +479,7 @@ SNMP_API_STAT_CODES AgentuinoClass::sendTrap(
     pdu->trap_data_adder(_packet + _packetPos);
     return writePacket(manager, 162);
 }
+
 void AgentuinoClass::writeHeaders(SNMP_PDU *pdu, uint16_t size)
 {
 	int32_u u;
@@ -366,6 +533,7 @@ void AgentuinoClass::writeHeaders(SNMP_PDU *pdu, uint16_t size)
 	// SNMP PDU
 	_packet[_packetPos++] = (byte)pdu->type;
 }
+
 SNMP_API_STAT_CODES AgentuinoClass::responsePdu(SNMP_PDU *pdu)
 {
 	int32_u u;
@@ -426,6 +594,7 @@ SNMP_API_STAT_CODES AgentuinoClass::responsePdu(SNMP_PDU *pdu)
 	}
     return writePacket(Udp.remoteIP(), Udp.remotePort());
 }
+
 SNMP_API_STAT_CODES AgentuinoClass::writePacket(
         IPAddress address, uint16_t port)
 {
@@ -434,8 +603,6 @@ SNMP_API_STAT_CODES AgentuinoClass::writePacket(
 	Udp.endPacket();
 	return SNMP_API_STAT_SUCCESS;
 }
-
-
 
 void AgentuinoClass::onPduReceive(onPduReceiveCallback pduReceived)
 {
