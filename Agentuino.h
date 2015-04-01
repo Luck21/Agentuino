@@ -117,13 +117,12 @@ typedef enum SNMP_PDU_TYPES {
 
 //Relational Operators
 enum relational_op {
-	LESS_THAN = 1,	 // a < b
-	GREATER_THAN,	 // a > b
+	LESS_THAN,	 // a < b
 	LESS_OR_EQUAL, 	 // a <= b
+	GREATER_THAN,	 // a > b
 	GREATER_OR_EQUAL, // a >= b
-	NOT_EQUAL,
-	EQUAL
-	
+	EQUAL,
+	NOT_EQUAL
 	//a is the pointed value by object_var field in TRAP_TRIGGER
 	//b is base_measure field of TRAP_TRIGGER
 };

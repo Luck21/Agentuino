@@ -307,122 +307,72 @@ uint8_t AgentuinoClass::installTrap (const char *oid, void *obj, SNMP_SYNTAXES t
 uint8_t AgentuinoClass::trapWatcher(void)
 {
 	uint8_t achievedTraps = 0;
-	bool trigger = false;
+
+	//table_rel: relational operations
+	//----------------------------------------------------
+	//bit| 7 | 6 |   5  |  4  |   3  |   2  |   1  |  0  |
+	//====================================================
+	//val| 1 | 1 | a!=b | a==b | a>=b | a>b | a<=b | a<b |
+	//----------------------------------------------------
+	uint8_t table_rel;// = 0b11000000;
 
 	if(trapNum < 0)
 		return 255;
 
 	for(uint8_t i = 0; i <= trapNum; i++)
 	{
-		switch(trap_list[i].condition)
-		{
-			case(LESS_THAN):
-				switch(trap_list[i].type)
-				{
-					case(SNMP_SYNTAX_UINT32):
-					case(SNMP_SYNTAX_INT):
-					case(SNMP_SYNTAX_COUNTER):
-					case(SNMP_SYNTAX_GAUGE):
-					case(SNMP_SYNTAX_TIME_TICKS):
-						trigger = *( (uint32_t *) trap_list[i].object_var) < *( (uint32_t *) trap_list[i].base_measure);
-					break;
-					case(SNMP_SYNTAX_COUNTER64):
-						trigger = *( (uint64_t *) trap_list[i].object_var) < *((uint64_t *) trap_list[i].base_measure);
-					break;
-				}
-			
-			break;
-			case(LESS_OR_EQUAL):
-				switch(trap_list[i].type)
-				{
-					case(SNMP_SYNTAX_UINT32):
-					case(SNMP_SYNTAX_INT):
-					case(SNMP_SYNTAX_COUNTER):
-					case(SNMP_SYNTAX_GAUGE):
-					case(SNMP_SYNTAX_TIME_TICKS):
-						trigger = *( (uint32_t *) trap_list[i].object_var) <= *( (uint32_t *) trap_list[i].base_measure);
-					break;
-					case(SNMP_SYNTAX_COUNTER64):
-						trigger = *( (uint64_t *) trap_list[i].object_var) <= *((uint64_t *) trap_list[i].base_measure);
-					break;
-				}
-			break;
-			case(GREATER_THAN):
-				switch(trap_list[i].type)
-				{
-					case(SNMP_SYNTAX_UINT32):
-					case(SNMP_SYNTAX_INT):
-					case(SNMP_SYNTAX_COUNTER):
-					case(SNMP_SYNTAX_GAUGE):
-					case(SNMP_SYNTAX_TIME_TICKS):
-						trigger = *( (uint32_t *) trap_list[i].object_var) > *( (uint32_t *) trap_list[i].base_measure);
-					break;
-					case(SNMP_SYNTAX_COUNTER64):
-						trigger = *( (uint64_t *) trap_list[i].object_var) > *((uint64_t *) trap_list[i].base_measure);
-					break;
-				}
-			break;
-			case(GREATER_OR_EQUAL):
-				switch(trap_list[i].type)
-				{
-					case(SNMP_SYNTAX_UINT32):
-					case(SNMP_SYNTAX_INT):
-					case(SNMP_SYNTAX_COUNTER):
-					case(SNMP_SYNTAX_GAUGE):
-					case(SNMP_SYNTAX_TIME_TICKS):
-						trigger = *( (uint32_t *) trap_list[i].object_var) >= *( (uint32_t *) trap_list[i].base_measure);
-					break;
-					case(SNMP_SYNTAX_COUNTER64):
-						trigger = *( (uint64_t *) trap_list[i].object_var) >= *((uint64_t *) trap_list[i].base_measure);
-					break;
-				}
-			break;
-			case(NOT_EQUAL):
-				switch(trap_list[i].type)
-				{
-					case(SNMP_SYNTAX_UINT32):
-					case(SNMP_SYNTAX_INT):
-					case(SNMP_SYNTAX_COUNTER):
-					case(SNMP_SYNTAX_GAUGE):
-					case(SNMP_SYNTAX_TIME_TICKS):
-						trigger = *( (uint32_t *) trap_list[i].object_var) != *( (uint32_t *) trap_list[i].base_measure);
-					break;
-					case(SNMP_SYNTAX_COUNTER64):
-						trigger = *( (uint64_t *) trap_list[i].object_var) != *((uint64_t *) trap_list[i].base_measure);
-					break;
-				}
-			break;
-			default:
-				switch(trap_list[i].type)
-				{
-					case(SNMP_SYNTAX_UINT32):
-					case(SNMP_SYNTAX_INT):
-					case(SNMP_SYNTAX_COUNTER):
-					case(SNMP_SYNTAX_GAUGE):
-					case(SNMP_SYNTAX_TIME_TICKS):
-						trigger = *( (uint32_t *) trap_list[i].object_var) == *( (uint32_t *) trap_list[i].base_measure);
-					break;
-					case(SNMP_SYNTAX_COUNTER64):
-						trigger = *( (uint64_t *) trap_list[i].object_var) == *((uint64_t *) trap_list[i].base_measure);
-					break;
-				}
-		}
+		table_rel = 0b11000000;
 
-		if((trap_list[i].send = trigger));
+		switch(trap_list[i].type)
 		{
-			
+			case(SNMP_SYNTAX_UINT32):
+			case(SNMP_SYNTAX_INT):
+			case(SNMP_SYNTAX_COUNTER):
+			case(SNMP_SYNTAX_GAUGE):
+			case(SNMP_SYNTAX_TIME_TICKS):
+			{	
+				uint32_t a = *((uint32_t *) trap_list[i].object_var);
+				uint32_t b = *((uint32_t *) trap_list[i].base_measure);
+				
+				table_rel |= ((a!=b)<<NOT_EQUAL);
+				table_rel |= ((a==b)<<EQUAL);
+				table_rel |= ((a>=b)<<GREATER_OR_EQUAL);
+				table_rel |= ((a>b)<<GREATER_THAN);
+				table_rel |= ((a<=b)<<LESS_OR_EQUAL);
+				table_rel += (a<b);
+			}
+			break;
+			case(SNMP_SYNTAX_COUNTER64):
+			{
+				uint64_t a = *((uint64_t *) trap_list[i].object_var);
+				uint64_t b = *((uint64_t *) trap_list[i].base_measure);
+				
+				table_rel |= ((a!=b)<<NOT_EQUAL);
+				table_rel |= ((a==b)<<EQUAL);
+				table_rel |= ((a>=b)<<GREATER_OR_EQUAL);
+				table_rel |= ((a>b)<<GREATER_THAN);
+				table_rel |= ((a<=b)<<LESS_OR_EQUAL);
+				table_rel += (a<b);
+			}
+			break;
+		}
+		
+		trap_list[i].send = ((1<<trap_list[i].condition) & table_rel);
+
+		if(trap_list[i].send);
+		{
 			achievedTraps++;
 			Serial.print(F("trapWatcher(): Send trap -> "));
 			Serial.println(trap_list[i].oid);
 			
 			SNMP_PDU pdu;
 
-  			pdu.type = SNMP_PDU_TRAP;
-  			pdu.OID.fromString(trap_list[i].oid);
-  			pdu.address = agent;
-  			pdu.trap_type = trap_type;//SNMP_TRAP_WARM_START;
-  			pdu.specific_trap = 1;
- 			pdu.time_ticks = this.time_ticks;
+  		//	pdu.type = SNMP_PDU_TRAP;
+  		//	pdu.OID.fromString(trap_list[i].oid);
+  		//	pdu.address = agent;
+  		//	pdu.trap_type = trap_type;//SNMP_TRAP_WARM_START;
+  		//	pdu.specific_trap = 1;
+ 		//	pdu.time_ticks = this.time_ticks;
 
 			//future implementation
 			/* the size of the data you will add at the end of the packet */
@@ -430,7 +380,7 @@ uint8_t AgentuinoClass::trapWatcher(void)
  			/* the function that adds this data */
  			//pdu.trap_data_adder = add_trap_data;
 
- 			Agentuino.sendTrap(&pdu, manager);
+ 			//Agentuino.sendTrap(&pdu, );
 		}
 	}
 
