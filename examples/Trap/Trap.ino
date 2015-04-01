@@ -12,9 +12,8 @@
 #include <Agentuino.h>
 
 //////////////////////////////////////////////////////////
-///         CONDITONS TO SEND A TRAP
+///         GENERIC CONDITONS TO SEND A TRAP
 //////////////////////////////////////////////////////////
-unsigned long int sysUpTimeEqual = 1000;
 
 //////////////////////////////////////////////////////////
 ///          GLOBAL VARS
@@ -24,7 +23,7 @@ char oid[SNMP_MAX_OID_LEN];
 SNMP_API_STAT_CODES api_status;
 SNMP_ERR_CODES status;
 
-char myCount = 0;
+unsigned long int myCount = 5000;
 
 ///////////////////////////////////////////////////////////
 ///                  MIB-2  OID
@@ -80,10 +79,9 @@ void setup()
   {
     Agentuino.onPduReceive(pduReceived);
   } 
-  
-  //send a Trap with oid sysUpTime when locUpTime is equal to sysUpTimeEqual
-  // the last param indicates the signal type of var locUpTime, is signed (true) or unsigned (false)
-  Agentuino.installTrap(sysUpTime, &locUpTime, EQUAL, &sysUpTimeEqual, false);
+  //shooting Trap when myCount is greater than myCount
+  //varBindList is null
+  Agentuino.installTrap(sysUpTime, SNMP_TRAP_ENTERPRISE_SPECIFIC, &locUpTime, SNMP_SYNTAX_TIME_TICKS, GREATER_OR_EQUAL, &myCount, NULL);
   
 }
 
