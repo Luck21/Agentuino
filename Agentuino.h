@@ -621,7 +621,7 @@ public:
 	SNMP_API_STAT_CODES mountTrapPdu(TRAP *trap, SNMP_PDU *pdu);
 	SNMP_API_STAT_CODES requestPdu(SNMP_PDU *pdu);
 	SNMP_API_STAT_CODES responsePdu(SNMP_PDU *pdu);
-	uint8_t installTrap (const char *oid, SNMP_TRAP_TYPES trapType,
+	uint8_t installTrap (const char *oid, SNMP_TRAP_TYPES trapType, uint16_t specific,
 			     void *obj, SNMP_SYNTAXES objType,
 			     enum relational_op rel_op, void *base_measure,
 			     VAR_BIND_LIST *varBindList);

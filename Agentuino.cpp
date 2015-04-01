@@ -373,7 +373,7 @@ SNMP_API_STAT_CODES AgentuinoClass::requestPdu(SNMP_PDU *pdu)
  *
 */
 uint8_t AgentuinoClass::installTrap (const char *oid, SNMP_TRAP_TYPES trapType, 
-				     void *obj, SNMP_SYNTAXES objType, 
+				     uint16_t specific, void *obj, SNMP_SYNTAXES objType, 
  				     enum relational_op rel_op, void *base_measure,
 				     VAR_BIND_LIST *varBindList)
 {
@@ -385,6 +385,7 @@ uint8_t AgentuinoClass::installTrap (const char *oid, SNMP_TRAP_TYPES trapType,
 
 	trap_list[++trapNum].objType = objType;
 	trap_list[trapNum].trapType = trapType;
+	trap_list[trapNum].specificTrap = specific;
 	strcpy_P(trap_list[trapNum].oid, (PGM_P) oid);
 	//Serial.println(trap_list[trapNum].oid);	//debug
 	//Serial.println(trap_list[trapNum].oid);

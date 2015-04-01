@@ -80,8 +80,9 @@ void setup()
     Agentuino.onPduReceive(pduReceived);
   } 
   //shooting Trap when myCount is greater than myCount
+  //specifc Trap = 1
   //varBindList is null
-  Agentuino.installTrap(sysUpTime, SNMP_TRAP_ENTERPRISE_SPECIFIC, &locUpTime, SNMP_SYNTAX_TIME_TICKS, GREATER_OR_EQUAL, &myCount, NULL);
+  Agentuino.installTrap(sysUpTime, SNMP_TRAP_ENTERPRISE_SPECIFIC, 1, &locUpTime, SNMP_SYNTAX_TIME_TICKS, GREATER_OR_EQUAL, &myCount, NULL);
   
 }
 
