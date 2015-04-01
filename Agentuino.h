@@ -115,28 +115,6 @@ typedef enum SNMP_PDU_TYPES {
 	SNMP_PDU_TRAP	  = ASN_BER_BASE_CONTEXT | ASN_BER_BASE_CONSTRUCTOR | 4
 };
 
-//Relational Operators
-enum relational_op {
-	LESS_THAN,	 // a < b
-	LESS_OR_EQUAL, 	 // a <= b
-	GREATER_THAN,	 // a > b
-	GREATER_OR_EQUAL, // a >= b
-	EQUAL,
-	NOT_EQUAL
-	//a is the pointed value by object_var field in TRAP_TRIGGER
-	//b is base_measure field of TRAP_TRIGGER
-};
-
-//Trap's trigger
-typedef struct TRAP_TRIGGER{
-	char oid[SNMP_MAX_OID_LEN];
-	SNMP_SYNTAXES type;
-	void *object_var;
-	enum relational_op condition;
-	void *base_measure;	//value to compare
-	bool send;
-};
-
 typedef enum SNMP_TRAP_TYPES {
 	//   Trap generic types:
 	SNMP_TRAP_COLD_START 	      = 0,
@@ -147,6 +125,39 @@ typedef enum SNMP_TRAP_TYPES {
 	SNMP_TRAP_EGP_NEIGHBORLOSS    = 5,
 	SNMP_TRAP_ENTERPRISE_SPECIFIC = 6
 };
+
+typedef struct VAR_BIND_LIST {
+	void *var;
+	SNMP_SYNTAXES type;
+	VAR_BIND_LIST *nextVar;
+};
+
+//Relational Operators
+enum relational_op {
+	LESS_THAN,	 // a < b
+	LESS_OR_EQUAL, 	 // a <= b
+	GREATER_THAN,	 // a > b
+	GREATER_OR_EQUAL, // a >= b
+	EQUAL,
+	NOT_EQUAL
+	//a is the pointed value by object_var field in TRAP
+	//b is base_measure field of TRAP
+};
+
+//Trap's trigger
+typedef struct TRAP{
+	char oid[SNMP_MAX_OID_LEN];
+	SNMP_TRAP_TYPES trapType;
+	uint16_t specificTrap;
+	SNMP_SYNTAXES objType;
+	void *object_var;
+	enum relational_op condition;
+	void *base_measure;	//value to compare
+	bool send;
+	VAR_BIND_LIST *varBindList;
+};
+
+
 
 typedef enum SNMP_ERR_CODES {
 	SNMP_ERR_NO_ERROR 	  		= 0,
@@ -588,26 +599,32 @@ typedef struct SNMP_PDU {
 	SNMP_ERR_CODES error;
 	int32_t errorIndex;
 	SNMP_OID OID;
-	char* address;
+	byte* address;
     int16_t trap_type;
     int16_t specific_trap;
     uint32_t time_ticks;
     int16_t trap_data_size;
-    void (*trap_data_adder)(byte*) ;
+    byte *trap_data;
+   // void (*trap_data_adder)(byte*) ;
 	SNMP_VALUE VALUE;
 };
 
 class AgentuinoClass {
 public:
+	uint32_t time_ticks = 0;
+	
 	// Agent functions
 	SNMP_API_STAT_CODES begin();
 	SNMP_API_STAT_CODES begin(char *getCommName,
             char *setCommName, char *trapCommName, uint16_t port);
 	void listen(void);
+	SNMP_API_STAT_CODES mountTrapPdu(TRAP *trap, SNMP_PDU *pdu);
 	SNMP_API_STAT_CODES requestPdu(SNMP_PDU *pdu);
 	SNMP_API_STAT_CODES responsePdu(SNMP_PDU *pdu);
-	uint8_t installTrap (const char *oid, void *obj, SNMP_SYNTAXES type,
-			     enum relational_op rel_op, void *base_measure);
+	uint8_t installTrap (const char *oid, SNMP_TRAP_TYPES trapType,
+			     void *obj, SNMP_SYNTAXES objType,
+			     enum relational_op rel_op, void *base_measure,
+			     VAR_BIND_LIST *varBindList);
 	uint8_t trapWatcher(void);
 	SNMP_API_STAT_CODES sendTrap(SNMP_PDU *pdu, const uint8_t* manager);
 	void onPduReceive(onPduReceiveCallback pduReceived);
@@ -616,9 +633,8 @@ public:
 	// Helper functions
 
 private:
-	uint32_t time_ticks = 0;
 	int8_t trapNum;
-	TRAP_TRIGGER trap_list[MAX_TRAPS];
+	TRAP trap_list[MAX_TRAPS];
     void writeHeaders(SNMP_PDU *pdu, uint16_t size);
     SNMP_API_STAT_CODES writePacket(IPAddress address, uint16_t port);
 	byte _packet[SNMP_MAX_PACKET_LEN];

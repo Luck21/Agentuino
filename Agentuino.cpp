@@ -21,6 +21,7 @@
 
 #include "Agentuino.h"
 #include <avr/pgmspace.h>
+#include <Ethernet.h>
 #include <EthernetUdp.h>
 
 EthernetUDP Udp;
@@ -73,6 +74,8 @@ SNMP_API_STAT_CODES AgentuinoClass::begin(char *getCommName,
 
 void AgentuinoClass::listen(void)
 {
+	time_ticks = millis()/10;
+
 	// if bytes are available in receive buffer
 	// and pointer to a function (delegate function)
 	// isn't null, trigger the function
@@ -80,6 +83,95 @@ void AgentuinoClass::listen(void)
 	if ( Udp.available() && _callback != NULL ) (*_callback)();
 }
 
+SNMP_API_STAT_CODES AgentuinoClass::mountTrapPdu(TRAP *trap, SNMP_PDU *pdu)
+{
+	
+	/*uint32_u *ip = (uint32_u *) malloc(sizeof(uint32_u));
+	
+	if(ip == null)
+		return snmp_api_stat_malloc_err;
+	
+	pdu->address = ip->data;
+
+	free(ip);*/
+	uint32_u ip;
+	uint8_t listSize = 0;
+	VAR_BIND_LIST *tmpList = (VAR_BIND_LIST *) malloc(sizeof(VAR_BIND_LIST));
+	
+	if(tmpList == NULL)
+		return SNMP_API_STAT_MALLOC_ERR;
+
+	tmpList = trap->varBindList;
+
+	ip.uint32 = Ethernet.localIP();
+	
+	pdu->address = ip.data;
+  	pdu->type = SNMP_PDU_TRAP;
+  	pdu->OID.fromString(trap->oid);
+  	pdu->trap_type = trap->trapType;//SNMP_TRAP_WARM_START;
+  	pdu->specific_trap = trap->specificTrap;
+  	pdu->time_ticks = time_ticks;
+	pdu->trap_data_size = 0;
+	pdu->trap_data = NULL;
+
+	//found the size of varBindList
+	while(tmpList != NULL)
+	{
+		listSize++;//type
+		listSize++;//length
+		if(tmpList->type == SNMP_SYNTAX_COUNTER64)
+			listSize += 8;
+		else if(tmpList->type == SNMP_SYNTAX_OCTETS)
+			listSize += strlen((char *)tmpList->var);
+		else
+			listSize += 4;
+		tmpList = tmpList->nextVar;
+	}
+	
+	free(tmpList);
+	
+  	pdu->trap_data_size = listSize;
+	
+	if(listSize)
+		//allocate trap data
+		pdu->trap_data = (byte *) malloc(sizeof(byte)*listSize);
+	else
+		Serial.println("\n Varbind is NULL");
+	
+	if(pdu->trap_data == NULL && listSize != 0)
+		return SNMP_API_STAT_MALLOC_ERR;
+	else
+	{
+		uint8_t j = 0;
+		while(trap->varBindList != NULL)
+		{
+			byte k = 0;
+			
+			pdu->trap_data[j++] = trap->varBindList->type;
+			
+			if(trap->objType == SNMP_SYNTAX_COUNTER64)
+				k = 8;
+			else if(trap->objType == SNMP_SYNTAX_OCTETS)
+				k = strlen((char *)trap->varBindList->var);
+			else
+				k = 4;
+
+			pdu->trap_data[j++] = k;
+
+			memcpy(pdu->trap_data + j, trap->varBindList->var, k);
+
+			trap->varBindList = trap->varBindList->nextVar;
+		}
+
+	}
+
+  	/* the function that adds this data */
+  	//pdu->trap_data_adder = add_trap_data;
+	Serial.println(F("Sending TRAP"));
+	const uint8_t manager[] = {192, 168, 0, 110};
+
+  	Agentuino.sendTrap(pdu, manager);
+}
 
 SNMP_API_STAT_CODES AgentuinoClass::requestPdu(SNMP_PDU *pdu)
 {
@@ -280,24 +372,32 @@ SNMP_API_STAT_CODES AgentuinoClass::requestPdu(SNMP_PDU *pdu)
  * const char *oid - the OID 
  *
 */
-uint8_t AgentuinoClass::installTrap (const char *oid, void *obj, SNMP_SYNTAXES type, 
- 				     enum relational_op rel_op, void *base_measure)
+uint8_t AgentuinoClass::installTrap (const char *oid, SNMP_TRAP_TYPES trapType, 
+				     void *obj, SNMP_SYNTAXES objType, 
+ 				     enum relational_op rel_op, void *base_measure,
+				     VAR_BIND_LIST *varBindList)
 {
 	if(trapNum >= MAX_TRAPS)
 	{
-		Serial.println(F("\n\rinstallTrap(): Trap not installed! trap_list is FULL\n\r"));
+		Serial.println(F("\n\rerror installTrap(): trap_list is FULL!\n\r"));
 		return 1; //error
 	}
 
-	trap_list[++trapNum].type = type;
-	strcpy_P(trap_list[trapNum].oid, oid);
+	trap_list[++trapNum].objType = objType;
+	trap_list[trapNum].trapType = trapType;
+	strcpy_P(trap_list[trapNum].oid, (PGM_P) oid);
+	//Serial.println(trap_list[trapNum].oid);	//debug
+	//Serial.println(trap_list[trapNum].oid);
 	trap_list[trapNum].object_var = obj;
 	trap_list[trapNum].condition  = rel_op;
 	trap_list[trapNum].base_measure = base_measure;
 	trap_list[trapNum].send = false;
+	trap_list[trapNum].varBindList = varBindList;
 	
 	return 0;
 }
+
+
 /*
  * This function check if some condition in "trap_list" has been achieved. 
  * uint8_t trapWatcher (void)
@@ -308,7 +408,7 @@ uint8_t AgentuinoClass::trapWatcher(void)
 {
 	uint8_t achievedTraps = 0;
 
-	//table_rel: relational operations
+	//table_rel: basic relational operations
 	//----------------------------------------------------
 	//bit| 7 | 6 |   5  |  4  |   3  |   2  |   1  |  0  |
 	//====================================================
@@ -323,7 +423,7 @@ uint8_t AgentuinoClass::trapWatcher(void)
 	{
 		table_rel = 0b11000000;
 
-		switch(trap_list[i].type)
+		switch(trap_list[i].objType)
 		{
 			case(SNMP_SYNTAX_UINT32):
 			case(SNMP_SYNTAX_INT):
@@ -359,20 +459,30 @@ uint8_t AgentuinoClass::trapWatcher(void)
 		
 		trap_list[i].send = ((1<<trap_list[i].condition) & table_rel);
 
-		if(trap_list[i].send);
+		if(trap_list[i].send)
 		{
 			achievedTraps++;
-			Serial.print(F("trapWatcher(): Send trap -> "));
+
+			/*Serial.print(table_rel, BIN);
+			Serial.print(' ');
+			Serial.print((1<<trap_list[i].condition) & table_rel, BIN);*/
+			Serial.print(F(" trapWatcher(): Sending trap -> "));
 			Serial.println(trap_list[i].oid);
 			
 			SNMP_PDU pdu;
+
+			if(mountTrapPdu(trap_list + i, &pdu))
+			{
+				Serial.println(F("mountTrapPdu error"));
+				return 255;
+			}
 
   		//	pdu.type = SNMP_PDU_TRAP;
   		//	pdu.OID.fromString(trap_list[i].oid);
   		//	pdu.address = agent;
   		//	pdu.trap_type = trap_type;//SNMP_TRAP_WARM_START;
   		//	pdu.specific_trap = 1;
- 		//	pdu.time_ticks = this.time_ticks;
+ 		//	pdu.time_ticks = time_ticks;
 
 			//future implementation
 			/* the size of the data you will add at the end of the packet */
@@ -380,7 +490,8 @@ uint8_t AgentuinoClass::trapWatcher(void)
  			/* the function that adds this data */
  			//pdu.trap_data_adder = add_trap_data;
 
- 			//Agentuino.sendTrap(&pdu, );
+ 			//if(Agentuino.sendTrap(&pdu, ) == SNMP_API_STAT_SUCCESS)
+			//	trap_list[i].send = false;
 		}
 	}
 
@@ -422,11 +533,19 @@ SNMP_API_STAT_CODES AgentuinoClass::sendTrap(
 	_packet[_packetPos++] = value.data[1];
 	_packet[_packetPos++] = value.data[2];
 	_packet[_packetPos++] = value.data[3];
-    _packet[_packetPos++] = (byte) SNMP_SYNTAX_SEQUENCE;
-    _packet[_packetPos++] = (byte) 4 + pdu->trap_data_size;
-    _packet[_packetPos++] = (byte) SNMP_SYNTAX_SEQUENCE;
-    _packet[_packetPos++] = (byte) 2 + pdu->trap_data_size;
-    pdu->trap_data_adder(_packet + _packetPos);
+
+	if(pdu->trap_data_size)
+	{
+    		//_packet[_packetPos++] = (byte) SNMP_SYNTAX_SEQUENCE;
+    		//_packet[_packetPos++] = (byte) 4 + pdu->trap_data_size;
+    		_packet[_packetPos++] = (byte) SNMP_SYNTAX_SEQUENCE;
+    		_packet[_packetPos++] = (byte) pdu->trap_data_size;
+
+		for(i = 0; i < pdu->trap_data_size; i++)
+			_packet[_packetPos++] = *(pdu->trap_data + i);
+	}
+
+    //pdu->trap_data_adder(_packet + _packetPos);
     return writePacket(manager, 162);
 }
 
