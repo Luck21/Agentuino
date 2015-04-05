@@ -20,6 +20,7 @@
 #ifndef Agentuino_h
 #define Agentuino_h
 
+
 #define SNMP_DEFAULT_PORT	161
 #define SNMP_MIN_OID_LEN	2
 #define SNMP_MAX_OID_LEN	64 // 128
@@ -27,9 +28,16 @@
 #define SNMP_MAX_VALUE_LEN      64  // 128 ??? should limit this
 #define SNMP_MAX_PACKET_LEN     SNMP_MAX_VALUE_LEN + SNMP_MAX_OID_LEN + 25  //???
 #define SNMP_FREE(s)   do { if (s) { free((void *)s); s=NULL; } } while(0)
+#define DO_NOT_USE_TRAPS 0
 //Frees a pointer only if it is !NULL and sets its value to NULL. 
 
+//#ifndef DO_NOT_COMPILE_TRAPS
+
+#define USE_TRAPS 1
+
 #define MAX_TRAPS 3	// max number managed by the agent
+
+//#endif
 
 #include "Arduino.h"
 #include "Udp.h"
@@ -112,8 +120,12 @@ typedef enum SNMP_PDU_TYPES {
 	SNMP_PDU_GET_NEXT = ASN_BER_BASE_CONTEXT | ASN_BER_BASE_CONSTRUCTOR | 1,
 	SNMP_PDU_RESPONSE = ASN_BER_BASE_CONTEXT | ASN_BER_BASE_CONSTRUCTOR | 2,
 	SNMP_PDU_SET	  = ASN_BER_BASE_CONTEXT | ASN_BER_BASE_CONSTRUCTOR | 3,
+//	#ifndef DO_NOT_COMPILE_TRAPS
 	SNMP_PDU_TRAP	  = ASN_BER_BASE_CONTEXT | ASN_BER_BASE_CONSTRUCTOR | 4
+//	#endif
 };
+
+//#ifndef DO_NOT_COMPILE_TRAPS
 
 typedef enum SNMP_TRAP_TYPES {
 	//   Trap generic types:
@@ -128,6 +140,7 @@ typedef enum SNMP_TRAP_TYPES {
 
 typedef struct VAR_BIND_LIST {
 	void *var;
+	char oid[SNMP_MAX_OID_LEN];
 	SNMP_SYNTAXES type;
 	VAR_BIND_LIST *nextVar;
 };
@@ -156,8 +169,7 @@ typedef struct TRAP{
 	bool send;
 	VAR_BIND_LIST *varBindList;
 };
-
-
+//#endif
 
 typedef enum SNMP_ERR_CODES {
 	SNMP_ERR_NO_ERROR 	  		= 0,
@@ -600,59 +612,68 @@ typedef struct SNMP_PDU {
 	int32_t errorIndex;
 	SNMP_OID OID;
 	byte* address;
-    int16_t trap_type;
-    int16_t specific_trap;
-    uint32_t time_ticks;
-    int16_t trap_data_size;
-    byte *trap_data;
-   // void (*trap_data_adder)(byte*) ;
+    	uint32_t time_ticks;
+//    	#ifndef DO_NOT_COMPILE_TRAPS
+    	int16_t trap_type;
+    	int16_t specific_trap;
+    	int16_t trap_data_size;
+    	byte *trap_data;
+   	// void (*trap_data_adder)(byte*) ;
+//	#endif
+
 	SNMP_VALUE VALUE;
 };
 
 class AgentuinoClass {
 public:
 	uint32_t time_ticks = 0;
-	
 	// Agent functions
-	SNMP_API_STAT_CODES begin();
-	SNMP_API_STAT_CODES begin(char *getCommName,
-            char *setCommName, char *trapCommName, uint16_t port);
+	SNMP_API_STAT_CODES begin(bool useTraps, uint8_t *nms);
+	SNMP_API_STAT_CODES begin(const char *getCommName,
+            const char *setCommName, const char *trapCommName, size_t num, uint8_t *nms, uint16_t port);
 	void listen(void);
-	SNMP_API_STAT_CODES mountTrapPdu(TRAP *trap, SNMP_PDU *pdu);
 	SNMP_API_STAT_CODES requestPdu(SNMP_PDU *pdu);
 	SNMP_API_STAT_CODES responsePdu(SNMP_PDU *pdu);
+//	#ifndef DO_NOT_COMPILE_TRAPS
+	SNMP_API_STAT_CODES mountTrapPdu(TRAP *trap, SNMP_PDU *pdu);
+	uint8_t installTrap(TRAP *trap);
 	uint8_t installTrap (const char *oid, SNMP_TRAP_TYPES trapType, uint16_t specific,
 			     void *obj, SNMP_SYNTAXES objType,
 			     enum relational_op rel_op, void *base_measure,
 			     VAR_BIND_LIST *varBindList);
 	uint8_t trapWatcher(void);
 	SNMP_API_STAT_CODES sendTrap(SNMP_PDU *pdu, const uint8_t* manager);
+//	#endif
 	void onPduReceive(onPduReceiveCallback pduReceived);
 	void freePdu(SNMP_PDU *pdu);
 
 	// Helper functions
+	SNMP_API_STAT_CODES addVarToBindList(VAR_BIND_LIST *bindList, const char *oid, void *variable, SNMP_SYNTAXES type);
 
 private:
+//	#ifndef DO_NOT_COMPILE_TRAPS
+	uint32_u NMS;
 	int8_t trapNum;
-	TRAP trap_list[MAX_TRAPS];
-    void writeHeaders(SNMP_PDU *pdu, uint16_t size);
-    SNMP_API_STAT_CODES writePacket(IPAddress address, uint16_t port);
+	TRAP *trap_list;
+	uint8_t trapListSize;
+	char *_trapCommName;
+	uint16_t _packetTrapPos;
+	uint8_t checkTrapList();
+//	#endif
+    	void writeHeaders(SNMP_PDU *pdu, uint16_t size);
+    	SNMP_API_STAT_CODES writePacket(IPAddress address, uint16_t port);
 	byte _packet[SNMP_MAX_PACKET_LEN];
 	uint16_t _packetSize;
 	uint16_t _packetPos;
-	uint16_t _packetTrapPos;
 	SNMP_PDU_TYPES _dstType;
 	uint8_t _dstIp[4];
 	uint16_t _dstPort;
 	char *_getCommName;
-	size_t _getSize;
 	char *_setCommName;
-	size_t _setSize;
-	char *_trapCommName;
-	size_t _trapSize;
 	onPduReceiveCallback _callback;
 };
 
 extern AgentuinoClass Agentuino;
-
+// Create one global object
+//AgentuinoClass Agentuino;
 #endif

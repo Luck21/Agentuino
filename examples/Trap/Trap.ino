@@ -1,9 +1,13 @@
-/**
+/*
 * Agentuino SNMP Agent Library
 *
 * Copyright 2010 Eric C. Gionet <lavco_eg@hotmail.com>
 *
 * Trap Example: Lucas Correa <lucas.correa@gmx.com>
+* 
+* About:
+*  This example send a TRAP to NMS when locUpTime is 
+*  greater than var myCount.
 */
 
 
@@ -12,18 +16,10 @@
 #include <Agentuino.h>
 
 //////////////////////////////////////////////////////////
-///         GENERIC CONDITONS TO SEND A TRAP
-//////////////////////////////////////////////////////////
-
-//////////////////////////////////////////////////////////
-///          GLOBAL VARS
+///                     GLOBAL VARS
 //////////////////////////////////////////////////////////
 uint32_t prevMillis = 0;
-char oid[SNMP_MAX_OID_LEN];
-SNMP_API_STAT_CODES api_status;
-SNMP_ERR_CODES status;
-
-unsigned long int myCount = 5000;
+unsigned long int myCount = 500;
 
 ///////////////////////////////////////////////////////////
 ///                  MIB-2  OID
@@ -63,27 +59,55 @@ static char locName[20]             = "Agentuino";                              
 static char locLocation[20]         = "My Place";                         // should be stored/read from EEPROM - read/write (not done for simplicity)
 static int32_t locServices          = 6;
 
+///////////////////////////////////////////////////////////
+///            VARIABLE-BINDINGS ON TRAP PDU
+//////////////////////////////////////////////////////////
+VAR_BIND_LIST varBindList;
+
 void setup()
 {
+  SNMP_API_STAT_CODES api_status;
   static byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
   static byte ip[] = { 192, 168, 0, 6 };
+  uint8_t nms[] = { 192, 168, 0, 100 };
+  
+  varBindList.var = &locUpTime;
+  strcpy_P(varBindList.oid, sysUpTime);
+  varBindList.type = SNMP_SYNTAX_TIME_TICKS;
+  varBindList.nextVar = NULL;
   
   Serial.begin(9600);
   Ethernet.begin(mac, ip);
   
   prevMillis = millis();
   
-  api_status = Agentuino.begin();
+  api_status = Agentuino.begin(USE_TRAPS, nms);
   
   if( api_status == SNMP_API_STAT_SUCCESS )
   {
     Agentuino.onPduReceive(pduReceived);
-  } 
-  //shooting Trap when myCount is greater than myCount
-  //specifc Trap = 1
-  //varBindList is null
-  Agentuino.installTrap(sysUpTime, SNMP_TRAP_ENTERPRISE_SPECIFIC, 1, &locUpTime, SNMP_SYNTAX_TIME_TICKS, GREATER_OR_EQUAL, &myCount, NULL);
+  }
+  else
+  {
+    Serial.println("Erro on Agentuino.Begin()");
+    while(1);
+  }
   
+  //==========================================================
+  // USE addVarToBindList to create a variable list for a trap
+  //==========================================================
+  // add var in bindList. This is just a example. This setup is
+  // is invalid for NMS (or not).
+  Agentuino.addVarToBindList(&varBindList, sysUpTime,&myCount, SNMP_SYNTAX_TIME_TICKS);
+  
+  //===========================================================
+  // USE installTrap to notice API that there is new condition
+  // to send trap
+  //===========================================================
+  //shooting Trap when locUpTime is greater than myCount
+  //specifc Trap = 1
+  //varBindList
+  Agentuino.installTrap(sysUpTime, SNMP_TRAP_ENTERPRISE_SPECIFIC, 1, &locUpTime, SNMP_SYNTAX_TIME_TICKS, GREATER_OR_EQUAL, &myCount, &varBindList);
 }
 
 void loop()
@@ -96,7 +120,8 @@ void loop()
     locUpTime += 100;
     
     //check if we have a condition to send a trap to manager
-    Agentuino.trapWatcher();
+    if(Agentuino.trapWatcher())
+      Serial.println("Send Trap");
   }
   
 }
@@ -106,7 +131,11 @@ void loop()
 ///////////////////////////////////////////////////
 void pduReceived()
 {
+  SNMP_ERR_CODES status;
+  SNMP_API_STAT_CODES api_status;
+  char oid[SNMP_MAX_OID_LEN];
   SNMP_PDU pdu;
+  
   api_status = Agentuino.requestPdu(&pdu);  
   //
   if ((pdu.type == SNMP_PDU_GET || pdu.type == SNMP_PDU_GET_NEXT || pdu.type == SNMP_PDU_SET)
@@ -259,7 +288,6 @@ void pduReceived()
       pdu.type = SNMP_PDU_RESPONSE;
       pdu.error = SNMP_ERR_NO_SUCH_NAME;
     }
-    
     //
     Agentuino.responsePdu(&pdu);
   }

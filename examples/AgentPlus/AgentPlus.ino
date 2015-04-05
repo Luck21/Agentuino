@@ -5,15 +5,16 @@
 *
 * Update snmpGetNext by Petr Domorazek <petr@domorazek.cz>
 */
+
 #include <Ethernet.h>          // Include the Ethernet library
 #include <SPI.h>
 #include <Agentuino.h>
 
 static byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-static byte ip[] = { 192, 168, 20, 6 };
+static byte ip[] = { 192, 168, 0, 6 };
 //static byte gateway[] = { 192, 168, 20, 1 };
 //static byte subnet[] = { 255, 255, 255, 0 };
-
+unsigned long int myCount = 500;
 //
 // tkmib - linux mib browser
 //
@@ -222,20 +223,17 @@ void pduReceived()
 
 void setup()
 {
-  //Serial.begin(9600);
+  Serial.begin(9600);
   Ethernet.begin(mac, ip);
+  uint8_t nms[] = {192, 168,0,100};
   //
-  api_status = Agentuino.begin();
+  api_status = Agentuino.begin(true, nms);
   //
   if ( api_status == SNMP_API_STAT_SUCCESS ) {
     //
     Agentuino.onPduReceive(pduReceived);
-    //
-    delay(10);
-    //
-    return;
   }
-  //
+  
   delay(10);
 }
 
