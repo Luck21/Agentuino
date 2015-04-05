@@ -19,7 +19,7 @@
 ///                     GLOBAL VARS
 //////////////////////////////////////////////////////////
 uint32_t prevMillis = 0;
-unsigned long int myCount = 500;
+unsigned long int myCount = 5000;
 
 ///////////////////////////////////////////////////////////
 ///                  MIB-2  OID
@@ -98,7 +98,7 @@ void setup()
   //==========================================================
   // add var in bindList. This is just a example. This setup is
   // is invalid for NMS (or not).
-  Agentuino.addVarToBindList(&varBindList, sysUpTime,&myCount, SNMP_SYNTAX_TIME_TICKS);
+  Agentuino.addVarToBindList(&varBindList, sysName,locName, SNMP_SYNTAX_OCTETS);
   
   //===========================================================
   // USE installTrap to notice API that there is new condition

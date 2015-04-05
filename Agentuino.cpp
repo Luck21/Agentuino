@@ -218,10 +218,18 @@ SNMP_API_STAT_CODES AgentuinoClass::mountTrapPdu(TRAP *trap, SNMP_PDU *pdu)
 				return SNMP_API_STAT_MALLOC_ERR;
 			
 			memcpy(var, trap->varBindList->var, varSize);
-			do{
-				varSize -= 1;
-				pdu->trap_data[j++] = var[varSize];
-			}while(varSize > 0);
+			if(trap->varBindList->type == SNMP_SYNTAX_OCTETS)
+			{
+				for(uint8_t l = 0; l < varSize; l++)
+					pdu->trap_data[j++] = var[l];
+			}
+			else
+			{	
+				do{
+					varSize -= 1;
+					pdu->trap_data[j++] = var[varSize];
+				}while(varSize > 0);
+			}
 			free(var);
 
 			trap->varBindList = trap->varBindList->nextVar;
