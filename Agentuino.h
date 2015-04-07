@@ -16,6 +16,7 @@
 */
 
 // Update fromString by Petr Domorazek
+// installTraps, addVarBindList, trapWatcher by Luck21
 
 #ifndef Agentuino_h
 #define Agentuino_h
@@ -28,13 +29,12 @@
 #define SNMP_MAX_VALUE_LEN      64  // 128 ??? should limit this
 #define SNMP_MAX_PACKET_LEN     SNMP_MAX_VALUE_LEN + SNMP_MAX_OID_LEN + 25  //???
 #define SNMP_FREE(s)   do { if (s) { free((void *)s); s=NULL; } } while(0)
-#define DO_NOT_USE_TRAPS 0
 //Frees a pointer only if it is !NULL and sets its value to NULL. 
 
 //#ifndef DO_NOT_COMPILE_TRAPS
 
+#define DO_NOT_USE_TRAPS 0
 #define USE_TRAPS 1
-
 #define MAX_TRAPS 3	// max number managed by the agent
 
 //#endif
@@ -635,7 +635,6 @@ public:
 	SNMP_API_STAT_CODES requestPdu(SNMP_PDU *pdu);
 	SNMP_API_STAT_CODES responsePdu(SNMP_PDU *pdu);
 //	#ifndef DO_NOT_COMPILE_TRAPS
-	SNMP_API_STAT_CODES mountTrapPdu(TRAP *trap, SNMP_PDU *pdu);
 	uint8_t installTrap(TRAP *trap);
 	uint8_t installTrap (const char *oid, SNMP_TRAP_TYPES trapType, uint16_t specific,
 			     void *obj, SNMP_SYNTAXES objType,
@@ -662,6 +661,7 @@ private:
 //	#endif
     	void writeHeaders(SNMP_PDU *pdu, uint16_t size);
     	SNMP_API_STAT_CODES writePacket(IPAddress address, uint16_t port);
+	SNMP_API_STAT_CODES mountTrapPdu(TRAP *trap, SNMP_PDU *pdu);
 	byte _packet[SNMP_MAX_PACKET_LEN];
 	uint16_t _packetSize;
 	uint16_t _packetPos;

@@ -26,6 +26,19 @@
 
 EthernetUDP Udp;
 
+/**
+ * @brief Initialize API with default configurations.
+ *	  get community name = "public"
+ *	  set community name = "private"
+ *	  trap community name = "public"
+ *	  Port 161 (get/set)
+ * 	  Port 162 (trap)
+ *
+ * @param useTraps - If TRUE, configure API to send Traps. Otherwise, API do not send trap.
+ * @param nms - Array with NMS IPv4 address.
+ * @return - The API status code.
+ * @see SNMP_API_STAT_CODES.
+ */ 
 SNMP_API_STAT_CODES AgentuinoClass::begin(bool useTraps, uint8_t nms[4])
 {
 	trapListSize = 0;
@@ -60,6 +73,18 @@ SNMP_API_STAT_CODES AgentuinoClass::begin(bool useTraps, uint8_t nms[4])
 	return SNMP_API_STAT_SUCCESS;
 }
 
+/**
+ * @brief Initialize API with specific configurations.
+ *
+ * @param getCommName - Pointer to string of get community name.
+ * @param setCommName - Pointer to string of set community name.
+ * @param trapCommName - Pointer to string of trap community name.
+ * @param num - Number of traps used in agent. If 0, do not use traps.
+ * @param nms - Array with NMS IPv4 address.
+ * @param port - Port for send get/set packet.
+ * @return - The API status code.
+ * @see SNMP_API_STAT_CODES.
+ */ 
 SNMP_API_STAT_CODES AgentuinoClass::begin(const char *getCommName, const char *setCommName,
 					  const char *trapCommName, size_t num,
 					  uint8_t nms[4], uint16_t port)
@@ -108,6 +133,11 @@ SNMP_API_STAT_CODES AgentuinoClass::begin(const char *getCommName, const char *s
 	return SNMP_API_STAT_SUCCESS;
 }
 
+/**
+ * @brief Check if API has received any SNMP packet, then execute call back function.
+ * @param void
+ * @return void
+ */ 
 void AgentuinoClass::listen(void)
 {
 	time_ticks = millis()/10;
@@ -252,11 +282,18 @@ uint8_t AgentuinoClass::checkTrapList()
 }
 
 /*
- * installTrap
- * notice a Trap condition to API.
- * const char *oid - the OID 
- *
-*/
+ * @brief Notice a Trap condition to API.
+ * @param oid - Pointer to trap OID
+ * @param trapType - The type of trap (coldStart, warmStart, enterprise ...)
+ * @param specific - Number of specific trap
+ * @param obj - Pointer for a variable to be monitored.
+ * @param objType - The type of variable to be monitored.
+ * @param rel_op - The relational operator to compare value of obj and base_measure
+ * @see enum relational_op
+ * @param base_measure - Variable to be compared
+ * @param varBindList - Variable attached to trap.
+ * @return 0 for success, 1 for error
+ */ 
 uint8_t AgentuinoClass::installTrap (const char *oid, SNMP_TRAP_TYPES trapType, 
 				     uint16_t specific, void *obj, SNMP_SYNTAXES objType, 
  				     enum relational_op rel_op, void *base_measure,
@@ -278,6 +315,12 @@ uint8_t AgentuinoClass::installTrap (const char *oid, SNMP_TRAP_TYPES trapType,
 	return 0;
 }
 
+/*
+ * @brief Notice a Trap condition to API.
+ * @param oid - Pointer to a not null trap struct.
+ * @return 0 for success, 1 for error
+ */ 
+
 uint8_t AgentuinoClass::installTrap(TRAP *trap)
 {
 	if(checkTrapList())
@@ -291,10 +334,9 @@ uint8_t AgentuinoClass::installTrap(TRAP *trap)
 }
 
 /*
- * This function check if some condition in "trap_list" has been achieved. 
- * uint8_t trapWatcher (void)
- *	params: void
- *	return: 255 if trap_list is null, otherwise return Number of conditions traps achieved.
+ * @brief This function check if some condition in "trap_list" has been achieved. 
+ * @params: void
+ * @return: 255 if trap_list is null, otherwise return Number of conditions traps achieved.
 */
 uint8_t AgentuinoClass::trapWatcher(void)
 {
